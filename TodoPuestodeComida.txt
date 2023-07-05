@@ -1,0 +1,194 @@
+
+//Modifique y añada lo que crea necesarios
+public class Cliente extends Thread{
+    private int id;
+    private int racionesPapas;
+    private int hamburguesas;
+    private Puesto puesto;
+    public Cliente(int id, Puesto puesto, int racionesPapas, int hamburguesas){
+        this.id = id;
+        this.racionesPapas = racionesPapas;
+        this.hamburguesas = hamburguesas;
+        this.puesto = puesto;
+    }
+    
+    @Override
+    public void run() {
+            puesto.obtenerComida(hamburguesas,racionesPapas,id);
+    }
+}
+
+//Modifique y añada lo que crea necesarios
+public class Cocinero extends Thread{
+    private Puesto puesto;
+    private int tareas;
+    public Cocinero(Puesto puesto, int tareas) {
+        this.puesto = puesto;
+        this.tareas = tareas;
+        puesto.abre();
+    }
+    
+    
+    @Override
+    public void run() {
+            while(true){
+                if(tareas >0){
+                    if(puesto.verPuesto()==0){
+                        Simulador.log("Cocinero añade H");
+                        puesto.añadirHamburguesas();
+                        tareas--;
+                    }else{
+                        Simulador.log("Cocinero añade P");
+                        puesto.añadirPapas();
+                        tareas--;
+                    }  
+                }else{
+                Simulador.log("Cocinero Cierra");
+                puesto.cierra();
+                break;
+                }
+            }
+    }
+}
+
+
+//Modifique y añada lo que crea necesarios
+
+public class Puesto {
+    private int racionesPapas;
+    private int hamburguesas;
+    private int maxRacionesPapas;
+    private int maxHamburguesas;
+    private boolean abierto;
+    public Puesto(int maxRacionesPapas, int maxHamburguesas){
+        this.racionesPapas = 0;
+        this.hamburguesas = 0;
+        this.maxRacionesPapas = maxRacionesPapas;
+        this.maxHamburguesas = maxHamburguesas;
+    }
+    public void abre() {
+        Simulador.log("Puesto abierto");
+        this.abierto = true;
+    }
+    public void cierra() {
+        Simulador.log("Puesto cerrado");
+        this.abierto = false;
+    }
+    public boolean estáAbierto() {
+        return abierto;
+    }
+    
+    public synchronized int verPuesto(){
+        if(hamburguesas<=racionesPapas) return 0;
+        else return 1;
+    }
+    
+    public synchronized void añadirHamburguesas(){
+        try{   
+                if((hamburguesas+4)<=maxHamburguesas){
+                    Simulador.tiempoCocinar();
+                    hamburguesas+=4;
+                    notifyAll();
+                }else{
+                    wait();
+                    añadirHamburguesas();
+                }
+        }catch(InterruptedException ex){}
+    }
+    
+    public synchronized void añadirPapas(){
+        try{    
+                if((racionesPapas+4)<=maxRacionesPapas){
+                    Simulador.tiempoCocinar();
+                    racionesPapas+=4;
+                    notifyAll();
+                }else{
+                    wait();
+                    añadirPapas();
+                }
+        }catch(InterruptedException ex){}
+    }
+    
+    public synchronized void obtenerComida(int clienteH, int clienteP, int clienteId){
+        try{
+            if(estáAbierto()){
+                Simulador.log("Cliente "+clienteId+ " ["+ clienteH + ","+clienteP+"] llega al puesto");
+                if(((racionesPapas-clienteP)>=0)&&((hamburguesas-clienteH)>=0)){
+                    racionesPapas= racionesPapas - clienteP;
+                    hamburguesas= hamburguesas - clienteH;
+                    Simulador.log("Cliente "+clienteId+ " ["+ clienteH + ","+clienteP+"] consigue la comida");
+                    notifyAll();
+                    Simulador.tiempoComerHamburguesa();
+                    Simulador.tiempoComerPapas();
+                    Simulador.log("Cliente "+clienteId+ " ["+ clienteH + ","+clienteP+"] termina de comer");
+                }else{
+                    Simulador.log("Cliente "+clienteId+ " ["+ clienteH + ","+clienteP+"] espera a por la comida");
+                    wait();
+                    obtenerComida(clienteH,clienteP,clienteId);
+                }
+            }
+        }catch(InterruptedException ex){}
+    }
+}
+
+public class Simulador {
+    private static long tini=System.currentTimeMillis();
+    private static java.util.Random rand= new java.util.Random();
+    
+    public static void main(String[] args) {
+        Puesto puesto = new Puesto(10,10);
+        Cliente[] clientes = new Cliente[20];
+        Cocinero cocinero = new Cocinero(puesto,8);
+        // Creamos los clientes
+        for(int i = 0; i < clientes.length; i++) {
+            int racionesPapas = rand.nextInt(4);
+            int hamburguesas = 1 + rand.nextInt(3);
+            clientes[i] = new Cliente(i+1, puesto, racionesPapas, hamburguesas);
+        }
+        // Descomente para ejecutar la simulación
+        // Iniciamos el cocinero
+        cocinero.start();
+        try {
+            Thread.sleep(100); // Damos tiemp para que el cocinero abra el puesto
+        } catch(InterruptedException e) {
+            log("Sleep interrumpido");
+        }
+        // Iniciamos los clientes
+        for(int i = 0; i < clientes.length; i++) {
+            clientes[i].start();
+        }
+        // Esperamos por el cocinero y los clientes
+        try {
+            cocinero.join();
+            for(int i = 0; i < clientes.length; i++) {
+                clientes[i].join();
+            }
+        } catch(InterruptedException e) {
+            log("Join interrumpido");
+        }
+
+        //*/
+        log("Termina Simulador");
+    }
+    
+    // Muestra información en la pantalla
+    public static void log(String message) {
+            long cur=System.currentTimeMillis();
+            String t= String.format("%6.1fs \033[1;33m%s\033[m\n", (cur-tini)/1000.0, message);
+            System.out.print(t);
+    }
+    
+    // Devuelve tiempo de comer hamburguesa
+    public static int tiempoComerHamburguesa() {
+        return 250 + rand.nextInt(250);
+    }
+    
+    // Devuelve tiempo de comer ración papas
+    public static int tiempoComerPapas() {
+        return 100 + rand.nextInt(200);
+    }
+    // Devuelve tiempo necesario cocinar 4 Hamburguesas o 4 raciones de papas
+    public static int tiempoCocinar() {
+        return 500;
+    }
+}

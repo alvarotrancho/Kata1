@@ -1,0 +1,287 @@
+package cloud;
+
+/** 
+ * Clase ya implementada. No es necesario modificarla.
+ *
+ * Agrupa los datos tiempo de CPU y cantidad de Memoria.
+ * 
+ */
+public class Resources {
+
+    private final long cpu;
+    private final int mem;
+
+    public Resources(long cpu, int mem) {
+        this.cpu = cpu;
+        this.mem = mem;
+    }
+
+    public long getCpu() {
+        return cpu;
+    }
+
+    public int getMem() {
+        return mem;
+    }
+}
+
+package cloud;
+import java.util.*;
+
+/**
+ * LA IMPLEMENTACIÓN ACTUAL NO ES COMPLETA. AÑADA LOS MODIFICADORES, CLÁUSULAS
+ * Y CAMPOS QUE SEAN NECESARIOS.
+ *
+ */
+
+public class ComputingService { //extends Thread {
+    
+    volatile long maxCpu;
+    volatile long maxMem;
+    volatile long currCpu;
+    volatile long currMem;
+    volatile long totalCpu = (long) 0;
+    volatile long totalMem = (long) 0;
+    
+    /** 
+     * Constructor.
+     * Incializa los valores de la cantidad total de CPU y memoria ofertadas.
+     * La suma de los recursos consumidos por los clientes nunca puede ser mayor
+     * para cualquiera de esos dos valores.
+     *
+     * @param maxCpu tiempo total de CPU que ofrece el servicio
+     * @param maxMem cantidad total de memoria que ofrece el servicio
+     */
+     public ComputingService(long maxCpu, int maxMem) {
+         this.maxCpu = maxCpu;
+         this.maxMem = maxMem;
+         currCpu = maxCpu;
+         currMem = maxMem;
+     }
+     
+     
+     /**
+      * Solicita la reserva de recursos. Un cliente invoca este método para
+      * solicitar el consumo de cierta cantidad de CPU y memoria.
+      * 
+      * @param res cantidad de CPU y memoria que se solicita reservar
+      * 
+      * @return false, si la cantidad solicitada es mayor que la que nunca podría
+      *         ofrecer el servicio; true, si la solicitud ha sido atendida.
+      * 
+      */
+     public synchronized boolean request(Resources res) {
+        if (maxCpu < res.getCpu() || maxMem < res.getMem()) {
+            return false;
+        }
+        while(currCpu < res.getCpu() || currMem < res.getMem()) {
+            try {
+                wait();
+            } catch (InterruptedException ex) {}
+        }
+        currCpu -= res.getCpu();
+        currMem -= res.getMem();
+        totalCpu += res.getCpu();
+        totalMem += res.getMem();
+        return true;
+     }
+
+
+     /**
+      * Libera los recursos especificados por parámetro.
+      * 
+      * @param res cantidad de CPU y memoria que manda a liberar un cliente
+      * 
+      */
+     public synchronized void release(Resources res) {
+         currCpu += res.getCpu();
+         currMem += res.getMem();
+         notifyAll();
+     }
+     
+     
+     /**
+      * Retorna la suma total de recursos consumidos por los clientes hasta el
+      * momento.
+      * 
+      * @return suma de toda la CPU y suma de toda la memoria consumidas hasta
+      *         el momento.
+      *
+      */
+     public synchronized Resources getServedResources() {
+         return new Resources(totalCpu,(int) totalMem);
+     }
+}
+
+package cloud;
+import java.util.*;
+
+import java.util.concurrent.ThreadLocalRandom;
+ 
+/** 
+ * Contiene el método "main" y funciones de utilidades.
+ * 
+ * La función "createResources()" se puede usar para instanciar objetos de tipo
+ * "Resources" con valores aleatorios.
+ * 
+ */
+public class Simulador {
+    
+    private static long tini = System.currentTimeMillis();
+    
+    private static final int N_CLIENTS = 10;
+    private static final int N_ITERATIONS = 2;    
+    
+    private static final long MAX_CPU = 6000;
+    private static final int MAX_MEM = 100;
+    
+    public static ComputingService computingControl;
+
+    public static void main(String[] args) {
+        
+        // Crear instancia de Servicio de Computación
+        computingControl = new ComputingService(MAX_CPU,MAX_MEM);
+        
+        Diablillo diablo = new Diablillo(computingControl);
+        
+        // Crear 10 clientes
+        List<Client> clientRegister = new ArrayList<Client>();
+        
+        for (int i=0; i<N_CLIENTS; i++) {
+            clientRegister.add(new Client(i,createResources(),N_ITERATIONS,computingControl));
+        }
+        
+        diablo.start();
+        
+        // Iniciar la ejecución de los 10 clientes
+        for (Client curr : clientRegister) {
+            curr.start();
+        }
+        
+        // Iniciar thread de tipo daemon
+        
+        // Esperar a la finalización de los 10 clientes
+        
+        for (Client curr : clientRegister) {
+            try {
+                curr.join();
+            } catch (InterruptedException ex) {}
+        }
+        
+        log("Recursos totales",computingControl.getServedResources());
+        
+        // Mostrar la cantidad total de CPU y memoria consumida
+    }
+    
+    protected static class Diablillo extends Thread {
+        private ComputingService intControl;
+        protected Diablillo(ComputingService control) {
+            intControl = control;
+            this.setDaemon(true);
+        }
+        public void run() {
+            Resources res = new Resources((long)0,0);
+            try {
+                    while(true) {
+                        //Se podría comprobar que el total de recursos ha cambiado desde la última llamada
+                        log("Recursos actuales",intControl.getServedResources());
+                        sleep(2000);
+                    }
+            } catch (InterruptedException ex) {}
+        }
+    }
+    
+    
+    /**
+     * Crea un objeto de tipo Resources con valores aleatorios.
+     */
+    private static Resources createResources() {
+        final int MAX_CPU_SECS_PER_TASK = 3;
+        final int MAX_MEM_PER_TASK = 30;
+        return new Resources(
+                (ThreadLocalRandom.current().nextLong(MAX_CPU_SECS_PER_TASK) + 1) * 1000,
+                ThreadLocalRandom.current().nextInt(MAX_MEM_PER_TASK) + 1);
+    }
+    
+
+    /**
+     * Imprime un cadena con la forma "CPU total: [valor] , Mem total: [valor]"
+     * 
+     */
+    public static void log(String cadena, Resources res) {
+        long cur=System.currentTimeMillis();
+        String message = String.format("%s (CPU: %d, Mem: %d)", cadena, res.getCpu(), res.getMem());
+        String t= String.format("%6.1fs      \033[1;33m%s\033[m\n", (cur-tini)/1000.0, message);
+        synchronized(System.out) {
+            System.out.print(t);
+        }        
+    }
+}
+
+
+package cloud;
+import java.util.*;
+
+/**
+ * Thread Java que ejecuta el número de veces que se le indica en el constructor
+ * el siguiente bloque de trabajo:
+ * 
+ * 1) Solicita los servicios de computación (CPU y memoria) que quiere consumir.
+ *    Si no es posible atenderlo porque excede el límite de recursos posibles del
+ *    servicio, se escribe en pantalla el mensaje:
+ * 
+ *        Client-[Id]: Recursos fuera de rango (CPU: 150 , Mem: 30)
+ * 
+ *    y cede la ejecución a otro Thread. En el caso de que sí sea posible
+ *    atenderlos, imprime en pantalla:
+ * 
+ *        Client-[Id]: Recursos reservados (CPU: 150 , Mem: 30)
+ * 
+ *    y simula que ejecuta una acción de trabajo durmiendo el thread tantos milisegundos
+ *    como indica el método "getCpu()" del objeto Resources.
+ * 
+ * 
+ * 2) Libera los recursos reservados y escribe en pantalla:
+ * 
+ *        Client-[Id]: Recursos liberados (CPU: 150 , Mem: 30)
+ * 
+ * 
+ * 3) Cede la CPU a otros Threads antes de seguir con la siguiente iteración.
+ * 
+ *
+ */ 
+ public class Client extends Thread {
+     
+    private Resources intRes;
+    private int intIter;
+    private ComputingService intCont;
+    private int ID;
+    private String name;
+    
+    public Client(int inputID, Resources inputResources, int inputIter, ComputingService inputControl) {
+        intRes = new Resources(inputResources.getCpu(),inputResources.getMem());
+        intIter = inputIter;
+        ID = inputID;
+        name = "Client-[" + ID + "]";
+        intCont = inputControl;
+    }
+    
+    public void run() {
+        try {
+            for (int i = 0; i < intIter; i++) {
+                if (!intCont.request(intRes)) {
+                    Simulador.log(name + ": Recursos fuera de rango",intRes);
+                    return;
+                }
+                Simulador.log(name + ": Recursos reservados",intRes);
+                sleep(intRes.getCpu());
+                intCont.release(intRes);
+                Simulador.log(name + ": Recursos liberados",intRes);
+                //Indicado en clase como suficiente para liberar CPU
+                sleep(50);
+            }
+            return;
+        } catch (InterruptedException ex) {}
+    }
+}
+
